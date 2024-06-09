@@ -10,6 +10,7 @@ def create_tables():
             name TEXT NOT NULL
         )
     ''')
+    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS magazines (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17,6 +18,7 @@ def create_tables():
             category TEXT NOT NULL
         )
     ''')
+    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS articles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,6 +30,16 @@ def create_tables():
             FOREIGN KEY (magazine_id) REFERENCES magazines (id)
         )
     ''')
-
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS author_magazine (
+            author_id INTEGER,
+            magazine_id INTEGER,
+            PRIMARY KEY (author_id, magazine_id),
+            FOREIGN KEY (author_id) REFERENCES authors (id),
+            FOREIGN KEY (magazine_id) REFERENCES magazines (id)
+        )
+    ''')
+    
     conn.commit()
     conn.close()
