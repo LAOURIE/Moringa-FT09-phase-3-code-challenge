@@ -1,149 +1,63 @@
-import sqlite3
-
 class Article:
-     def _init_(self, author=None, magazine=None, title=None, id=None):
-         if id is None and (author is None or magazine is None or title is None):
-             raise ValueError("Either id or author, magazine and title must be provided")
-         if id is None:
-             if not isinstance(title, str) or len(title) < 5 or len(title) > 50:
-                 raise ValueError("Title must be a string between 5 and 50 characters")
-             
-             self._author_id = author.id
-             self._magazine_id = magazine.id
-             self._title = title
-            
-            
-             conn = sqlite3.connect('magazine.db')
-             cursor = conn.cursor()
-             
-             cursor.execute('''
-                 INSERT INTO articles (author_id, magazine_id, title)
-                            VALUES (?, ?, ?)
-                            ''', (self._author_id, self._magazine_id, self._title)           )
-             self._id = cursor.lastrowid
-             conn.commit()
-             conn.close()
+    def __init__(self, id=None, title=None, content=None, author=None, magazine=None, conn=None, author_id=None, magazine_id=None):
+        self.id = id
+        self.title = title
+        self.content = content
+        self.author_id = author_id if author_id else author.id
+        self.magazine_id = magazine_id if magazine_id else magazine.id
+        self.conn = conn
 
+        if conn:
+            self.cursor = self.conn.cursor()
+            self.add_to_database()
 
-         else:
-             article = self._get_article_by_id(id)
-             if article is None:
-                 raise ValueError(f"No article found with id {id}")
-             self._id = article._id
-             self._author_id = article._author_id
-             self._magazine_id = article._magazine_id
-             self._title = article._title
+    def __repr__(self):
+        return f'<Article {self.title}>'
 
-     @property
-     def id(self):
-         return self._id
-     
-     @id.setter
-     def id(self, value):
-         raise AttributeError("Cannot modify the id of an article")
+    def add_to_database(self):
+        sql = "INSERT INTO articles (title,content,author_id,magazine_id) VALUES (?,?,?,?)"
+        self.cursor.execute(sql, (self.title, self.content, self.author_id, self.magazine_id))
+        self.conn.commit()
+        self.id = self.cursor.lastrowid
 
-     @property
-     def title(self):
-         return self._title
-     
-     @title.setter
-     def title(self, value):
-         raise AttributeError("Cannot modify the title of an article after it has been set")
-     
-     @property
-     def author(self):
-         return self._get_author_by_article_id(self._id)
-     
-     @property
-     def magazine(self):
-         return self._get_magazine_by_article_id(self._id)
-     def __repr__(self) :
-         return f'<Article {self.title}>'
-     
-     @staticmethod
-     def _get_article_by_id(article_id):
-         conn = sqlite3.connect('magazine.db')
-         cursor = conn.cursor()
-         
-         cursor.execute('''
-             SELECT id, author_id, magazine_id, title FROM articles where id = ?
-             ''', (article_id,))
-         row = cursor.fetchone()
-         conn.close()
-         
-         if row:
-             return Article(id=row[0], author_id=row[1], magazine_id=row[2], title=row[3])
-         else:
-             return None
-         @staticmethod
-         def delete_article(article_id):
-             conn = sqlite3.connect('magazine.db')
-             cursor = conn.cursor()
-             
-            
-             cursor.execute('''
-             DELETE FROM articles
-             WHERE id = ?
-             ''', (article_id,))
+    @property
+    def title(self):
+        if not hasattr(self, "_title"):
+            sql = "SELECT title FROM articles WHERE id = ?"
+            row = self.cursor.execute(sql, (self.id,)).fetchone()
+            if row:
+                self._title = row[0]
+        return self._title
 
-             conn.commit()
-             conn.close()
-         @staticmethod
-         def update_article_title(self,new_title):
-              if not isinstance(new_title, str) or len(new_title) < 5 or len(new_title) > 50:
-                  raise ValueError("Title must be a string between 5 and 50 characters")
-              
-              conn = sqlite3.connect('magazine.db')
-              cursor = conn.cursor()
+    @title.setter
+    def title(self, title):
+        if isinstance(title, str) and 5 <= len(title) <= 50 and not hasattr(self, "_title"):
+            self._title = title
+        else:
+            raise ValueError(
+                "Title must be a string between 5 and 50 characters long and can only be set once.")
 
-         cursor.execute('''
-            UPDATE articles
-            SET title = ?
-            WHERE id = ?
-            ''', (new_title, article_id))
+    def author(self):
+        from models.author import Author
+        sql = "SELECT authors.* FROM authors WHERE id = ?"
+        row = self.cursor.execute(sql, (self.author_id,)).fetchone()
+        if row:
+            return Author(id=row[0], name=row[1], conn=self.conn)
+        else:
+            return None
 
-         conn.commit()
-         conn.close()
+    def magazine(self):
+        from models.magazine import Magazine
+        sql = "SELECT magazines.* FROM magazines WHERE id = ?"
+        row = self.cursor.execute(sql, (self.magazine_id,)).fetchone()
+        if row:
+            return Magazine(id=row[0], name=row[1], category=row[2], conn=self.conn)
+        else:
+            return None
 
-         article = Article._get_article_by_id(article_id)
-         article._title = new_title
-         return article
-     
-     @staticmethod
-     def _get_author_by_article_id(article_id):
-         conn = sqlite3.connect('magazine.db')
-         cursor = conn.cursor()
-         
-         cursor.execute('''
-             SELECT authors.id, authors.name
-             FROM authors
-                        JOIN articles ON authors.id = articles.author_id
-             WHERE articles.id = ?
-             ''', (article_id,))
-         
-         row = cursor.fetchone()
-         conn.close()
-         
-         if row:
-             return Author(id=row[0], name=row[1])
-         else:
-             return None
-         @staticmethod
-         def _get_magazine_by_article_id(article_id):
-             conn = sqlite3.connect('magazine.db')
-             cursor = conn.cursor()
-             
-             cursor.execute('''
-                 SELECT magazines.id, magazines.name, magazines.category
-                 FROM magazines
-                            JOIN articles ON magazines.id = articles.magazine_id
-                 WHERE articles.id = ?
-                 ''', (article_id,))
-             
-             row = cursor.fetchone()
-             conn.close()
-
-             if row:
-                 return Magazine(id=row[0], name=row[1], category=row[2])
-             else:
-                 return None
+    @classmethod
+    def get_all_articles(cls, conn):
+        sql = "SELECT * FROM articles"
+        cursor = conn.cursor()
+        articles = cursor.execute(sql).fetchall()
+        return [cls(id=row[0], title=row[1], content=row[2], author_id=row[3], magazine_id=row[4], conn=conn) for row in articles]

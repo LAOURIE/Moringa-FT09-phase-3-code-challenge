@@ -1,33 +1,35 @@
-import sqlite3
-
 class Author:
-    def __init__(self, id=None, name=None):
-        if id is None and name is None:
-            raise ValueError("Either id or name must be provided")
+    def __init__(self, id=None, name=None, conn=None):
+        self.name = name
+        self.conn = conn
+        self.id = id
 
-        if id is None:
-            # Insert new author into the database
-            if not isinstance(name, str) or len(name) == 0:
-                raise ValueError("Name must be a non-empty string")
+        if conn:
+            self.cursor = conn.cursor()
+            self.add_author()
 
-            conn = sqlite3.connect('magazine.db')
-            cursor = conn.cursor()
+    def __repr__(self):
+        return f'<Author {self.name}>'
 
-            cursor.execute('''
-                INSERT INTO authors (name)
-                VALUES (?)
-            ''', (name,))
-            self._id = cursor.lastrowid
-            self._name = name
+    def __eq__(self, other):
+        if isinstance(other, Author):
+            return self.id == other.id and self.name == other.name
+        return False
 
-            conn.commit()
-            conn.close()
-        else:
-            author = self._get_author_by_id(id)
-            if author is None:
-                raise ValueError(f"No author found with id {id}")
-            self._id = author.id
-            self._name = author.name
+    def __hash__(self):
+        return hash((self.id, self.name))
+
+    def add_author(self):
+        if self.name:
+            sql_check = "SELECT id FROM authors WHERE name = ? LIMIT 1"
+            result = self.cursor.execute(sql_check, (self.name,)).fetchone()
+            if result:
+                self._id = result[0]
+            else:
+                sql = "INSERT INTO authors(name) VALUES (?)"
+                self.cursor.execute(sql, (self.name,))
+                self.conn.commit()
+                self._id = self.cursor.lastrowid
 
     @property
     def id(self):
@@ -35,112 +37,52 @@ class Author:
 
     @id.setter
     def id(self, value):
-        raise AttributeError("Cannot modify the id of an author")
+        if value is None:
+            self._id = 0  # Set a default value or handle None case appropriately
+        elif isinstance(value, int):
+            self._id = value
+        else:
+            raise ValueError("Invalid ID value")
 
     @property
     def name(self):
+        if not hasattr(self, "_name"):
+            if self.id:
+                sql = "SELECT name FROM authors WHERE id = ?"
+                self.cursor.execute(sql, (self.id,))
+                row = self.cursor.fetchone()
+                if row:
+                    self._name = row[0]
         return self._name
 
     @name.setter
-    def name(self, value):
-        raise AttributeError("Cannot modify the name of an author after it has been set")
-
-    def __repr__(self):
-        return f'<Author {self.name}>'
-
-    def _get_author_by_id(self, author_id):
-        conn = sqlite3.connect('magazine.db')
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            SELECT id, name FROM authors WHERE id = ?
-        ''', (author_id,))
-
-        row = cursor.fetchone()
-        conn.close()
-
-        if row:
-            return Author(id=row[0], name=row[1])
+    def name(self, name):
+        if isinstance(name, str) and len(name):
+            self._name = name
         else:
-            return None
-
-    @staticmethod
-    def delete_author(author_id):
-        conn = sqlite3.connect('magazine.db')
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            DELETE FROM authors WHERE id = ?
-        ''', (author_id,))
-
-        conn.commit()
-        conn.close()
-
-    def update_author_name(self, new_name):
-        if not isinstance(new_name, str) or len(new_name) == 0:
-            raise ValueError("Name must be a non-empty string")
-
-        conn = sqlite3.connect('magazine.db')
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            UPDATE authors
-            SET name = ?
-            WHERE id = ?
-        ''', (new_name, self._id))
-
-        conn.commit()
-        conn.close()
-        self._name = new_name
+            raise ValueError("Invalid name value")
 
     def articles(self):
-        conn = sqlite3.connect('magazine.db')
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            SELECT articles.id, articles.title, articles.content, articles.author_id, articles.magazine_id
-            FROM articles
-            JOIN authors ON articles.author_id = authors.id
-            WHERE authors.id = ?
-        ''', (self.id,))
-
-        rows = cursor.fetchall()
-        conn.close()
-
-        return [Article(id=row[0], title=row[1], content=row[2], author_id=row[3], magazine_id=row[4]) for row in rows]
+        from models.article import Article
+        if self.id:
+            sql = "SELECT * FROM articles WHERE author_id = ?"
+            rows = self.cursor.execute(sql, (self.id,)).fetchall()
+            return [Article(id=row[0], title=row[1], content=row[2], author_id=row[3], magazine_id=row[4], conn=self.conn) for row in rows]
+        else:
+            return []
 
     def magazines(self):
-        conn = sqlite3.connect('magazine.db')
+        from models.magazine import Magazine
+        if self.id:
+            sql = "SELECT DISTINCT magazines.id, magazines.name, magazines.category FROM magazines INNER JOIN articles ON articles.magazine_id = magazines.id WHERE articles.author_id = ?"
+            rows = self.cursor.execute(sql, (self.id,)).fetchall()
+            return [Magazine(id=row[0], name=row[1], category=row[2], conn=self.conn) for row in rows]
+        else:
+            return []
+
+    @classmethod
+    def get_all_authors(cls, conn):
+        sql = "SELECT * FROM authors"
         cursor = conn.cursor()
-
-        cursor.execute('''
-            SELECT DISTINCT magazines.id, magazines.name, magazines.category
-            FROM magazines
-            JOIN articles ON magazines.id = articles.magazine_id
-            WHERE articles.author_id = ?
-        ''', (self.id,))
-
-        rows = cursor.fetchall()
-        conn.close()
-
-        return [Magazine(id=row[0], name=row[1], category=row[2]) for row in rows]
-
-class Article:
-    def __init__(self, id, title, content, author_id, magazine_id):
-        self.id = id
-        self.title = title
-        self.content = content
-        self.author_id = author_id
-        self.magazine_id = magazine_id
-
-    def __repr__(self):
-        return f'<Article {self.title}>'
-
-class Magazine:
-    def __init__(self, id, name, category):
-        self.id = id
-        self.name = name
-        self.category = category
-
-    def __repr__(self):
-        return f'<Magazine {self.name}>'
+        authors = cursor.execute(sql).fetchall()
+        return [cls(id=author[0], name=author[1], conn=conn) for author in authors]
